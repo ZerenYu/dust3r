@@ -1,0 +1,52 @@
+syntax = "proto3";
+
+package covariant.brain_api;
+
+import "dust3r/proto/common/ids.proto";
+
+// Type of a frame.
+enum FrameType {
+  // Unspecified.
+  FRAME_TYPE_UNSPECIFIED = 0;
+  // Camera frame.
+  FRAME_TYPE_CAMERA = 1;
+  // Robot base frame.
+  FRAME_TYPE_ROBOT_BASE = 2;
+  // Frame of the TCP of a grasp point.
+  FRAME_TYPE_GRASP_TCP = 3;
+  // Frame of some target object defined in the context where it's used.
+  FRAME_TYPE_TARGET_OBJECT = 4;
+
+  // All GRASPED_OBJECT frames satisfy the following orientations:
+  // X-axis: Aligned with the longer side of the object (tangent to TCP xy-plane).
+  // Y-axis: Aligned with the shorter side of the object (tangent to TCP xy-plane).
+  // Z-axis: Same as the TCP z-axis.
+
+  // The frame origin is at the center of the object's top surface (the face in contact with suction gripper)
+  FRAME_TYPE_GRASPED_OBJECT_TOP = 5;
+  // The frame origin is at the object's bbox3d center
+  FRAME_TYPE_GRASPED_OBJECT_CENTER = 6;
+  // The frame origin is at the center of the object's bottom surface
+  FRAME_TYPE_GRASPED_OBJECT_BOTTOM = 7;
+  // Frame of the robot tool flange
+  FRAME_TYPE_ROBOT_TOOL = 8;
+
+  // The world frame.
+  // Commonly this is the same as the robot base frame, but the robot base frame and the world frame are not necessarily
+  // the same.
+  FRAME_TYPE_WORLD = 9;
+}
+
+// ID of a frame.
+message FrameID {
+  oneof frame_id {
+    // Camera ID (only if frame type is FRAME_TYPE_CAMERA)
+    CameraID camera_id = 1;
+  }
+}
+
+// Representation of a frame, consisting of its type and a type-specific ID.
+message Frame {
+  FrameType type = 1;
+  FrameID id = 2;
+}

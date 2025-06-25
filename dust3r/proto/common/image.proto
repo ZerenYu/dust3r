@@ -1,0 +1,85 @@
+syntax = "proto3";
+
+package covariant.brain_api;
+
+// A rectangular region of interest with respect to an image. All unit are in pixels.
+message RegionOfInterest {
+  // Minimum row index (inclusive)
+  int32 min_row = 1;
+  // Minimum column index (inclusive)
+  int32 min_column = 2;
+  // Maximum row index (exclusive)
+  int32 max_row = 3;
+  // Maximum column index (exclusive)
+  int32 max_column = 4;
+}
+
+// Range of depth prediction. Near / far plane are relative to the reference camera frame (in meters).
+message DepthRange {
+  float near_plane = 1;
+  float far_plane = 2;
+}
+
+// Enum specifying how many channels are in the image, and what each channel represents.
+enum ImageChannelType {
+  // Channel type is not specified.
+  IMAGE_CHANNEL_TYPE_UNSPECIFIED = 0;
+  // 3 channels: red, green, blue.
+  IMAGE_CHANNEL_TYPE_RGB = 1;
+  // Only a single channel
+  IMAGE_CHANNEL_TYPE_MONOCHROME = 2;
+}
+
+// Enum specifying the image data layout.
+enum ImageDataLayout {
+  // Data layout is not specified.
+  IMAGE_DATA_LAYOUT_UNSPECIFIED = 0;
+  // Data layout is (H, W, C) or channel-last
+  IMAGE_DATA_LAYOUT_HWC = 1;
+  // Data layout is (H, W)
+  IMAGE_DATA_LAYOUT_HW = 2;
+}
+
+// Enum specifying the data type of each pixel value.
+enum ImageDataType {
+  // Data type is not specified.
+  IMAGE_DATA_TYPE_UNSPECIFIED = 0;
+  // Data type is unsigned 8-bit integer (0~255).
+  IMAGE_DATA_TYPE_UINT8 = 1;
+  // Data type is unsigned 16-bit integer (0~65535).
+  IMAGE_DATA_TYPE_UINT16 = 2;
+  // Data type is 32-bit floating point number with little-endianness serialization.
+  IMAGE_DATA_TYPE_FLOAT32 = 3;
+}
+
+// Enum specifying the image compression method.
+enum ImageCompression {
+  // Compression method is not specified.
+  IMAGE_COMPRESSION_UNSPECIFIED = 0;
+  // Image is encoded as raw data without any compression, using little-endian encoding.
+  IMAGE_COMPRESSION_RAW = 1;
+  // Image is encoded via PNG compression.
+  IMAGE_COMPRESSION_PNG = 2;
+  // Image is encoded via JPEG compression.
+  IMAGE_COMPRESSION_JPEG = 3;
+}
+
+message ImageMetadata {
+  int32 height = 1;
+  int32 width = 2;
+  ImageChannelType channel_type = 3;
+  ImageDataLayout data_layout = 4;
+  ImageDataType data_type = 5;
+  ImageCompression compression = 6;
+}
+
+message ImageEncoderOptions {
+  uint32 height = 1;
+  uint32 width = 2;
+  ImageCompression compression = 3;
+}
+
+message Image {
+  ImageMetadata metadata = 1;
+  bytes raw_data = 2;
+}

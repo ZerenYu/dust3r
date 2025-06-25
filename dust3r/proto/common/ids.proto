@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package covariant.brain_api;
+
+message CameraID {
+  // A unique ID for a camera.
+  string id = 1;
+}
+
+message CameraRigID {
+  // A unique ID for an entire camera rig.
+  string id = 1;
+}
+
+

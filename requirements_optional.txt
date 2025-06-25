@@ -5,3 +5,14 @@ kapture-localization
 numpy-quaternion
 pycolmap  # for pnp
 poselib  # for pnp
+scipy
+torch
+torchvision
+Pillow
+matplotlib
+numpy
+# for GRPC service test
+grpcio
+grpcio-tools
+protobuf
+opencv-python

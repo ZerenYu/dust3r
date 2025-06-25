@@ -1,0 +1,72 @@
+syntax = "proto3";
+
+package covariant.brain_api;
+
+import "dust3r/proto/common/geometry.proto";
+import "dust3r/proto/common/ids.proto";
+
+// Intrinsic parameters of a camera. Together they form an intrinsic matrix (3 x 3):
+//   [fx, s, px]
+//   [0, fy, py]
+//   [0,  0,  1]
+message IntrinsicParameters {
+  // Focal length along the X direction, in pixels.
+  float fx = 1;
+  // Focal length along the Y direction, in pixels.
+  float fy = 2;
+  // X coordinate of the principal point, in pixels.
+  float px = 3;
+  // Y coordinate of the principal point, in pixels.
+  float py = 4;
+  // Skew coefficient (normally zero). Unit-less.
+  float s = 5;
+}
+
+// 5-coefficient distortion parameters consistent with OpenCV's definition.
+message FiveCoeffsDistortionParameters {
+  // 1st radial distortion coefficient.
+  float k1 = 1;
+  // 2nd radial distortion coefficient.
+  float k2 = 2;
+  // 1st tangential distortion coefficient.
+  float p1 = 3;
+  // 2nd tangential distortion coefficient.
+  float p2 = 4;
+  // 3rd radial distortion coefficient.
+  float k3 = 5;
+}
+
+message DistortionParameters {
+  oneof distortion_parameters {
+    FiveCoeffsDistortionParameters five_coeffs_distortion_parameters = 1;
+  }
+}
+
+// Extrinsic parameters between a pair of frames.
+message CameraExtrinsic {
+  Transform3D transform = 1;
+}
+
+message CameraIntrinsic {
+  // ID of the camera.
+  CameraID camera_id = 1;
+  // Linear intrinsic parameters.
+  IntrinsicParameters intrinsic = 2;
+  // Distortion parameters.
+  DistortionParameters distortion = 3;
+  // Height of the image in pixels.
+  int32 height = 4;
+  // Width of the image in pixels.
+  int32 width = 5;
+}
+
+
+// Entire calibration parameters data for a camera rig.
+message CameraRigCalibrationParameters {
+  // ID of the camera rig.
+  CameraRigID camera_rig_id = 1;
+  // Intrinsics of each camera.
+  repeated CameraIntrinsic intrinsics = 2;
+  // Extrinsics, either between a pair of cameras, or between a camera and some reference frame (e.g. robot base).
+  repeated CameraExtrinsic extrinsics = 3;
+}

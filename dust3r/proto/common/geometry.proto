@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package covariant.brain_api;
+
+import "dust3r/proto/common/frame.proto";
+
+// 3D coordinate (in meters)
+message Coordinate3D {
+  float x = 1;
+  float y = 2;
+  float z = 3;
+}
+
+// 3D dimension (in meters)
+message Dimension3D {
+  float x = 1;
+  float y = 2;
+  float z = 3;
+}
+
+// Unit quaternion
+message UnitQuaternion {
+  float w = 1;
+  float x = 2;
+  float y = 3;
+  float z = 4;
+}
+
+// A pose in 3D space, formed by a position component and an orientation component.
+// Note: this message type does not encode the coordinate frames with respect to which the Pose is defined. Whenever
+// possible, prefer the `Transform3D` class over this.
+message Pose {
+  Coordinate3D position = 1;
+  UnitQuaternion orientation = 2;
+}
+
+// A rigid transformation in 3D, described by a pose, as well as a pair of frames documenting what the transformation
+// is with respect to.
+message Transform3D {
+  Pose pose = 1;
+  Frame from_frame = 2;
+  Frame to_frame = 3;
+}
+
