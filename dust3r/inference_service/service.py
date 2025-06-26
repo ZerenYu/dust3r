@@ -11,7 +11,7 @@ from dust3r.inference import inference
 from dust3r.image_pairs import make_pairs
 from dust3r.utils.device import to_numpy
 from dust3r.cloud_opt import global_aligner, GlobalAlignerMode
-from dust3r.utils.image import ImgNorm
+from dust3r.utils.image import ImgNorm, rgb
 
 # Import the generated protobuf code
 from dust3r.proto.inference import predict_depth_with_dust3r_pb2 as dust3r_pb2
@@ -57,8 +57,8 @@ class Dust3rInferenceServicer(dust3r_pb2_grpc.Dust3rInferenceServiceServicer):
         transform[:3, 3] = pos
         return transform
 
-    def _prepare_image_for_dust3r(self, camera_image, idx):
-        """Convert proto CameraImage to Dust3r format."""
+    def _prepare_image_for_dust3r(self, camera_image, idx, size=512):
+        """Convert proto CameraImage to Dust3r format, with resizing."""
         # Convert proto image data to PIL Image
         img_data = np.frombuffer(camera_image.image.raw_data, dtype=np.uint8)
         img_data = img_data.reshape(
@@ -66,13 +66,32 @@ class Dust3rInferenceServicer(dust3r_pb2_grpc.Dust3rInferenceServiceServicer):
             camera_image.image.metadata.width,
             3  # Assuming RGB
         )
+        
         pil_img = Image.fromarray(img_data)
         
+        # Resize logic from dust3r/utils/image.py
+        W1, H1 = pil_img.size
+        
+        # resize long side to 'size'
+        S = max(H1, W1)
+        if S > size:
+            interp = Image.LANCZOS
+        else:
+            interp = Image.BICUBIC
+        
+        new_size = tuple(int(round(x * size / S)) for x in pil_img.size)
+        resized_img = pil_img.resize(new_size, interp)
+
+        W, H = resized_img.size
+        cx, cy = W // 2, H // 2
+        halfw, halfh = ((2*cx)//16)*8, ((2*cy)//16)*8
+        cropped_img = resized_img.crop((cx - halfw, cy - halfh, cx + halfw, cy + halfh))
+        print(f"Cropped image size: {cropped_img.size}")
         # Convert to Dust3r format
-        img_norm = ImgNorm(pil_img)
+        img_norm = ImgNorm(cropped_img)
         return {
             'img': img_norm[None],  # Add batch dimension
-            'true_shape': np.int32([pil_img.size[::-1]]),
+            'true_shape': np.int32([cropped_img.size[::-1]]),
             'idx': idx,
             'instance': str(idx)
         }
@@ -96,10 +115,19 @@ class Dust3rInferenceServicer(dust3r_pb2_grpc.Dust3rInferenceServiceServicer):
             loaded_imgs.append(img_data)
         print("Loaded images")
         
-        has_camera_info = (request.camera_info and
-                           len(request.camera_info.intrinsics) == len(loaded_imgs) and
-                           len(request.camera_info.extrinsics) == len(loaded_imgs))
+        # Save loaded_imgs to output for debugging
+        output_dir = "output"
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
 
+        for i, img_data in enumerate(loaded_imgs):
+            img_tensor = img_data['img']
+            img_array = rgb(img_tensor)[0]  # remove batch dim
+            img_to_save = Image.fromarray((img_array * 255).astype(np.uint8))
+            img_to_save.save(os.path.join(output_dir, f"debug_loaded_img_{i}.png"))
+        print("Debug images saved to 'output' directory.")
+
+        has_camera_info = True
         known_poses = []
         known_focals = []
 
@@ -113,10 +141,6 @@ class Dust3rInferenceServicer(dust3r_pb2_grpc.Dust3rInferenceServiceServicer):
             for idx, cam_img in enumerate(request.captured_images):
                 camera_id = cam_img.camera_id.id
                 img_data = loaded_imgs[idx]
-
-                if camera_id not in extrinsics_map or camera_id not in intrinsics_map:
-                    has_camera_info = False
-                    break
 
                 # Poses
                 transform3d = extrinsics_map[camera_id]
@@ -133,12 +157,9 @@ class Dust3rInferenceServicer(dust3r_pb2_grpc.Dust3rInferenceServiceServicer):
                     scale = max(original_w / resized_w, original_h / resized_h)
                     focal = intrinsic.fx / scale
                     known_focals.append(focal)
-                else:
-                    has_camera_info = False
-                    break
             
-            if len(known_poses) != len(loaded_imgs) or len(known_focals) != len(loaded_imgs):
-                has_camera_info = False
+            print(f"Known poses: {known_poses}")
+            print(f"Known focals: {known_focals}")
         
         # Create image pairs
         pairs = make_pairs(loaded_imgs, prefilter=None, symmetrize=True)
@@ -154,7 +175,7 @@ class Dust3rInferenceServicer(dust3r_pb2_grpc.Dust3rInferenceServiceServicer):
         if has_camera_info:
             scene = global_aligner(output, device=self.device, mode=GlobalAlignerMode.ModularPointCloudOptimizer, optimize_pp=True)
             scene.preset_pose(known_poses, [True] * len(known_poses))
-            scene.preset_focal(known_focals, [True] * len(known_focals))
+            # scene.preset_focal(known_focals, [True] * len(known_focals))
             print("before alignment")
             scene.compute_global_alignment(init="mst", niter=300, schedule='cosine', lr=0.01)
         else:
@@ -165,34 +186,60 @@ class Dust3rInferenceServicer(dust3r_pb2_grpc.Dust3rInferenceServiceServicer):
 
         print("Finished inference")
         # Get depth maps and confidence scores
-        depth_maps = to_numpy(scene.get_depthmaps())
-        confidence_maps = to_numpy([c for c in scene.im_conf])
-        print(f"Depth map dtype: {depth_maps[0].dtype}")
-        print(f"Confidence map dtype: {confidence_maps[0].dtype}")
-        print("Finished conversion")
+        depth_maps = scene.get_depthmaps()
+        confidence_maps = [c for c in scene.im_conf]
+
         # Find the index of the reference camera
         ref_idx = 0  # Default to first camera if not found
+        original_height, original_width = 0, 0
         for idx, cam_img in enumerate(request.captured_images):
             if cam_img.camera_id == request.reference_camera_id:
                 ref_idx = idx
+                original_height = cam_img.image.metadata.height
+                original_width = cam_img.image.metadata.width
                 break
+        
+        # Get the depth map and confidence for the reference camera
+        depth_map_tensor = depth_maps[ref_idx]
+        conf_map_tensor = confidence_maps[ref_idx]
+        
+        # Rescale to original size
+        # Add batch and channel dimensions for interpolate
+        rescaled_depth_tensor = torch.nn.functional.interpolate(
+            depth_map_tensor.unsqueeze(0).unsqueeze(0),
+            size=(original_height, original_width),
+            mode='bilinear',
+            align_corners=False
+        ).squeeze()
+
+        rescaled_conf_tensor = torch.nn.functional.interpolate(
+            conf_map_tensor.unsqueeze(0).unsqueeze(0),
+            size=(original_height, original_width),
+            mode='bilinear',
+            align_corners=False
+        ).squeeze()
+
+        depth_data = to_numpy(rescaled_depth_tensor)
+        conf_data = to_numpy(rescaled_conf_tensor)
+
+        print(f"Depth map dtype: {depth_data.dtype}")
+        print(f"Confidence map dtype: {conf_data.dtype}")
+        print("Finished conversion")
 
         # Create response
         response = dust3r_pb2.PredictDust3rDepthResponse()
         
         # Add depth map
-        depth_map = response.depth_map
-        depth_data = depth_maps[ref_idx]
-        depth_map.metadata.height = depth_data.shape[0]
-        depth_map.metadata.width = depth_data.shape[1]
-        depth_map.raw_data = depth_data.tobytes()
+        depth_map_out = response.depth_map
+        depth_map_out.metadata.height = depth_data.shape[0]
+        depth_map_out.metadata.width = depth_data.shape[1]
+        depth_map_out.raw_data = depth_data.tobytes()
         
         # Add confidence map
-        conf_map = response.confidence_map
-        conf_data = confidence_maps[ref_idx]
-        conf_map.metadata.height = conf_data.shape[0]
-        conf_map.metadata.width = conf_data.shape[1]
-        conf_map.raw_data = conf_data.tobytes()
+        conf_map_out = response.confidence_map
+        conf_map_out.metadata.height = conf_data.shape[0]
+        conf_map_out.metadata.width = conf_data.shape[1]
+        conf_map_out.raw_data = conf_data.tobytes()
 
         return response
 

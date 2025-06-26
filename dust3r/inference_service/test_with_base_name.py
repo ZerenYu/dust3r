@@ -132,6 +132,10 @@ def create_test_request_with_base_name(base_name="20250528114015", data_dir="dat
     """Create a test request using real images from data folder with mock pose and intrinsic."""
     request = dust3r_pb2.PredictDust3rDepthRequest()
     
+    # Define camera IDs
+    camera_id_left = '230500707'
+    camera_id_right = '230701056'
+    
     # Find image pairs for the base name
     left_image_path, right_image_path = find_image_pairs(data_dir, base_name)
     
@@ -147,13 +151,13 @@ def create_test_request_with_base_name(base_name="20250528114015", data_dir="dat
     print(f"  Right image shape: {img_right.shape}")
     
     # Create camera images with realistic parameters
-    camera_left = create_camera_image(img_left, f"{base_name}_left", fx=1200.0, fy=1200.0, px=320.0, py=240.0)
-    camera_right = create_camera_image(img_right, f"{base_name}_right", fx=1200.0, fy=1200.0, px=320.0, py=240.0)
+    camera_left = create_camera_image(img_left, camera_id_left, fx=1200.0, fy=1200.0, px=320.0, py=240.0)
+    camera_right = create_camera_image(img_right, camera_id_right, fx=1200.0, fy=1200.0, px=320.0, py=240.0)
     
     request.captured_images.extend([camera_left, camera_right])
     
     # Set reference camera (left camera)
-    request.reference_camera_id.CopyFrom(ids_pb2.CameraID(id=f"{base_name}_left"))
+    request.reference_camera_id.CopyFrom(ids_pb2.CameraID(id=camera_id_left))
     
     # Create camera rig calibration with realistic parameters
     camera_rig = calibration_pb2.CameraRigCalibrationParameters()
@@ -161,51 +165,59 @@ def create_test_request_with_base_name(base_name="20250528114015", data_dir="dat
     
     # Left camera (reference camera) - at origin
     intrinsic_left = calibration_pb2.CameraIntrinsic()
-    intrinsic_left.camera_id.CopyFrom(ids_pb2.CameraID(id=f"{base_name}_left"))
-    intrinsic_left.intrinsic.fx = 1252.3121337890625
-    intrinsic_left.intrinsic.fy = 1333.312255859375
-    intrinsic_left.intrinsic.px = 384.77813720703125
-    intrinsic_left.intrinsic.py = 385.0728454589844
+    intrinsic_left.camera_id.CopyFrom(ids_pb2.CameraID(id=camera_id_left))
+    intrinsic_left.intrinsic.fx = 1252.3121
+    intrinsic_left.intrinsic.fy = 1333.3123
+    intrinsic_left.intrinsic.px = 384.77814
+    intrinsic_left.intrinsic.py = 385.07285
     intrinsic_left.intrinsic.s = 0.0
     intrinsic_left.height = 480
     intrinsic_left.width = 640
     
     # Right camera - offset to the right (stereo baseline)
     intrinsic_right = calibration_pb2.CameraIntrinsic()
-    intrinsic_right.camera_id.CopyFrom(ids_pb2.CameraID(id=f"{base_name}_right"))
-    intrinsic_right.intrinsic.fx = 1249.4617919921875
-    intrinsic_right.intrinsic.fy = 1315.15380859375
-    intrinsic_right.intrinsic.px = 273.49932861328125
-    intrinsic_right.intrinsic.py = 393.88031005859375
+    intrinsic_right.camera_id.CopyFrom(ids_pb2.CameraID(id=camera_id_right))
+    intrinsic_right.intrinsic.fx = 1249.4618
+    intrinsic_right.intrinsic.fy = 1315.1538
+    intrinsic_right.intrinsic.px = 273.49933
+    intrinsic_right.intrinsic.py = 393.8803
     intrinsic_right.intrinsic.s = 0.0
     intrinsic_right.height = 480
     intrinsic_right.width = 640
     
     camera_rig.intrinsics.extend([intrinsic_left, intrinsic_right])
     
+    # Create extrinsic for left camera (identity)
+    extrinsic_left = calibration_pb2.CameraExtrinsic()
+    transform_left = geometry_pb2.Transform3D()
+    transform_left.pose.position.x = 0.0
+    transform_left.pose.position.y = 0.0
+    transform_left.pose.position.z = 0.0
+    transform_left.pose.orientation.w = 1.0
+    transform_left.pose.orientation.x = 0.0
+    transform_left.pose.orientation.y = 0.0
+    transform_left.pose.orientation.z = 0.0
+    extrinsic_left.transform.CopyFrom(transform_left)
+
     # Create extrinsic transformation for right camera
-    # Typical stereo baseline: 0.12m to the right, slight forward offset
-    transform_right = create_transform_matrix([0.12, 0.0, 0.02], [0, 0, 0])
     extrinsic_right = calibration_pb2.CameraExtrinsic()
-    # The Transform3D needs proper structure - this may need to be revised
-    # For now, create a simple transform with identity pose
     transform_3d = geometry_pb2.Transform3D()
-    transform_3d.pose.position.x = 0.12
-    transform_3d.pose.position.y = 0.0
-    transform_3d.pose.position.z = 0.02
-    transform_3d.pose.orientation.w = 1.0
-    transform_3d.pose.orientation.x = 0.0
-    transform_3d.pose.orientation.y = 0.0
-    transform_3d.pose.orientation.z = 0.0
+    transform_3d.pose.position.x = 0.5416162
+    transform_3d.pose.position.y = -0.00021459343
+    transform_3d.pose.position.z = 0.05486262
+    transform_3d.pose.orientation.w = 0.99640304
+    transform_3d.pose.orientation.x = 0.00073635177
+    transform_3d.pose.orientation.y = -0.08473572
+    transform_3d.pose.orientation.z = -0.00055579125
     extrinsic_right.transform.CopyFrom(transform_3d)
     
-    camera_rig.extrinsics.extend([extrinsic_right])
+    camera_rig.extrinsics.extend([extrinsic_left, extrinsic_right])
     
     request.camera_info.CopyFrom(camera_rig)
     
     return request
 
-async def test_inference_service(server_address="localhost:50051", base_name="20250528114015", data_dir="data", output_dir="output"):
+async def test_inference_service(server_address="localhost:50062", base_name="20250528114015", data_dir="data", output_dir="output"):
     """Test the inference service with real images from data folder."""
     print(f"Connecting to server at {server_address}")
     print(f"Using base name: {base_name}")
@@ -292,8 +304,8 @@ async def main():
     parser = argparse.ArgumentParser(description='Test Dust3r Inference Service with real images')
     parser.add_argument('--base-name', type=str, default="20250528114015",
                         help='Base name for camera IDs (default: 20250528114015)')
-    parser.add_argument('--server', type=str, default='localhost:50051',
-                        help='Server address (default: localhost:50051)')
+    parser.add_argument('--server', type=str, default='localhost:50062',
+                        help='Server address (default: localhost:50062)')
     parser.add_argument('--data-dir', type=str, default='data',
                         help='Data directory containing images (default: data)')
     parser.add_argument('--output-dir', type=str, default='output',
