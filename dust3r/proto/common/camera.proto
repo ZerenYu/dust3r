@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package covariant.brain_api;
+
+import "dust3r/proto/common/calibration.proto";
+import "dust3r/proto/common/ids.proto";
+import "dust3r/proto/common/image.proto";
+
+message CameraImage {
+  CameraID camera_id = 1;
+  Image image = 2;
+  IntrinsicParameters intrinsics = 3;
+  DistortionParameters distortion = 4;
+}
+

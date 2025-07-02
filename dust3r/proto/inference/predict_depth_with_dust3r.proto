@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package covariant.brain_api;
+
+import "dust3r/proto/common/camera.proto";
+import "dust3r/proto/common/calibration.proto";
+import "dust3r/proto/common/ids.proto";
+import "dust3r/proto/common/image.proto";
+
+message PredictDust3rDepthRequest {
+  // A list of captured images. The images are guaranteed to have the following properties:
+  // - channel_type: ImageChannelType.IMAGE_CHANNEL_TYPE_RGB
+  // - data_layout: ImageDataLayout.IMAGE_DATA_LAYOUT_HWC
+  // - data_type: Same as the data type of the request protobuf if the compression is
+  //   ImageCompression.IMAGE_COMPRESSION_RAW. Otherwise, the data type is ImageDataType.IMAGE_DATA_TYPE_UINT8.
+  repeated CameraImage captured_images = 1;
+
+  // The reference camera of the camera capture, guaranteed to be among the camera identifiers in `captured_images`.
+  CameraID reference_camera_id = 2;
+
+  // Intrinsic extrinsic and camera_ids info
+  CameraRigCalibrationParameters camera_info = 3;
+}
+
+message PredictDust3rDepthResponse {
+
+  // The predicted depth map for the reference camera
+  Image depth_map = 1;
+
+  // Confidence scores for the depth predictions
+  Image confidence_map = 2;
+}
+
+// Service for running Dust3r depth inference
+service Dust3rInferenceService {
+  // Predicts depth maps from a set of captured images
+  rpc PredictDepth (PredictDust3rDepthRequest) returns (PredictDust3rDepthResponse);
+}
+
+
