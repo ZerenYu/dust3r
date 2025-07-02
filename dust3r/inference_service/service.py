@@ -154,12 +154,39 @@ class Dust3rInferenceServicer(dust3r_pb2_grpc.Dust3rInferenceServiceServicer):
                 resized_h, resized_w = img_data['img'].shape[2:]
 
                 if resized_h > 0 and resized_w > 0:
-                    scale = max(original_w / resized_w, original_h / resized_h)
-                    focal = intrinsic.fx / scale
+                    scale = max(original_w / float(resized_w), original_h / float(resized_h))
+                    focal = intrinsic.fx / scale 
+                    focal = focal + 200
                     known_focals.append(focal)
-            
+            print(f"Original image size: {original_h}x{original_w}")
+            print(f"Resized image size: {resized_h}x{resized_w}")
             print(f"Known poses: {known_poses}")
+            print(f"Scale: {scale}")
             print(f"Known focals: {known_focals}")
+            
+            # Replace the second pose with custom rotation and translation
+            if len(known_poses) > 1:
+                # Custom rotation matrix
+                custom_rotation = torch.tensor([
+                    [ 0.96875015,  0.0,         0.24803859],
+                    [ 0.0,         1.0,        -0.0       ],
+                    [-0.24803859, -0.0,         0.96875015]
+                ], device=self.device)
+                
+                # Custom translation vector
+                custom_translation = torch.tensor([-0.17423679069, 0.0, 0.02195171761], device=self.device)
+                
+                # Create custom 4x4 transformation matrix
+                custom_transform = torch.eye(4, device=self.device)
+                custom_transform[:3, :3] = custom_rotation
+                custom_transform[:3, 3] = custom_translation
+                # Calculate inverse transformation matrix
+                custom_transform_inv = torch.inverse(custom_transform)
+                print(f"Inverse custom transformation matrix: {custom_transform_inv}")
+                # Replace the second pose
+                known_poses[1] = custom_transform
+                print(f"Replaced second pose with custom transformation matrix")
+                print(f"Custom pose: {custom_transform}")
         
         # Create image pairs
         pairs = make_pairs(loaded_imgs, prefilter=None, symmetrize=True)
@@ -175,9 +202,10 @@ class Dust3rInferenceServicer(dust3r_pb2_grpc.Dust3rInferenceServiceServicer):
         if has_camera_info:
             scene = global_aligner(output, device=self.device, mode=GlobalAlignerMode.ModularPointCloudOptimizer, optimize_pp=True)
             scene.preset_pose(known_poses, [True] * len(known_poses))
-            # scene.preset_focal(known_focals, [True] * len(known_focals))
+            scene.preset_focal(known_focals, [True] * len(known_focals))
             print("before alignment")
             scene.compute_global_alignment(init="mst", niter=300, schedule='cosine', lr=0.01)
+            print(f"pose from scene: {scene.get_im_poses}")
         else:
             scene = global_aligner(output, device=self.device, mode=GlobalAlignerMode.PairViewer)
         
@@ -202,7 +230,11 @@ class Dust3rInferenceServicer(dust3r_pb2_grpc.Dust3rInferenceServiceServicer):
         # Get the depth map and confidence for the reference camera
         depth_map_tensor = depth_maps[ref_idx]
         conf_map_tensor = confidence_maps[ref_idx]
-        
+        # Print depth statistics
+        depth_min = depth_map_tensor.min().item()
+        depth_max = depth_map_tensor.max().item()
+        depth_median = depth_map_tensor.median().item()
+        print(f"Depth stats - min: {depth_min:.3f}, max: {depth_max:.3f}, median: {depth_median:.3f}")
         # Rescale to original size
         # Add batch and channel dimensions for interpolate
         rescaled_depth_tensor = torch.nn.functional.interpolate(
