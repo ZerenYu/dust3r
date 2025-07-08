@@ -7,15 +7,16 @@ services:
     ports:
       - "7860:7860"
       - "50062:50062"
+    working_dir: /depth
     environment:
       - DEVICE=cuda
       - MODEL=${MODEL:-DUSt3R_ViTLarge_BaseDecoder_512_dpt.pth}
-      - PYTHONPATH=/dust3r  # <--- ADD THIS LINE
+      - PYTHONPATH=/depth/models/dust3r
     volumes:
       - ./files/checkpoints:/checkpoints
       - ./files/data:/data
       - ./files/output:/output
-      - ../:/dust3r
+      - ../../../:/depth/
     cap_add:
       - IPC_LOCK
       - SYS_RESOURCE
